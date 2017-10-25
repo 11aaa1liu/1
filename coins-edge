@@ -1,0 +1,59 @@
+import numpy as np
+import cv2
+from matplotlib import pyplot as plt
+img = cv2.imread('water_coins.jpg')
+gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+circles = cv2.HoughCircles(gray,cv2.HOUGH_GRADIENT,1,50,
+                           param1=50,param2=40,minRadius=25,maxRadius=55)
+circles = np.uint16(np.around(circles))#四舍五入
+for i in circles[0,:]:
+    cv2.circle(gray,(i[0],i[1]),i[2],(0,255,0),2)
+    cv2.circle(gray,(i[0],i[1]),2,(0,0,255),3)
+cv2.imshow("gray",gray)
+ret, thresh = cv2.threshold(gray,0,255,cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
+cv2.imshow("thresh",thresh)
+#从找到硬币的近似估计开始。我们可以使用 Otsu's 二值化
+# noise removal# 降噪处理
+kernel = np.ones((3,3),np.uint8)
+opening = cv2.morphologyEx(thresh,cv2.MORPH_OPEN,kernel, iterations = 2)
+cv2.imshow("opening",opening )
+# sure background area
+sure_bg = cv2.dilate(opening,kernel,iterations=3)#确定背景区域
+cv2.imshow("background",sure_bg )
+# Finding sure foreground area
+# 距离变换的基本含义是计算一个图像中非零像素点到最近的零像素点的距离，也就是到零像素点的最短距离
+# 最常见的距离变换算法就是通过连续的腐蚀操作来实现，腐蚀操作的停止条件是所有前景像素都被完全腐蚀。
+# 这样根据腐蚀的先后顺序，我们就得到各个前景像素点到前景中心像素点的距离。
+# 根据各个像素点的距离值，设置为不同的灰度值。这样就完成了二值图像的距离变换
+#cv2.distanceTransform(src, distanceType, maskSize)Mask size should be 3 or 5 or 0 (presize)
+# 第二个参数 0,1,2 分别表示 CV_DIST_L1, CV_DIST_L2 , CV_DIST_C
+dist_transform = cv2.distanceTransform(opening,distanceType=3,maskSize= 5)
+print dist_transform.max()
+cv2.imshow("dist_transform ",dist_transform  )
+ret, sure_fg = cv2.threshold(dist_transform,0.7*dist_transform.max(),255,0)
+cv2.imshow("frontground",sure_fg )
+# Finding unknown region
+sure_fg = np.uint8(sure_fg)
+unknown = cv2.subtract(sure_bg,sure_fg)#未知区域
+#肯定是背景的区域中减去肯定是前景的区域就得到了边界区域
+cv2.imshow("unknown",unknown )
+# Marker labelling
+ret, markers1 = cv2.connectedComponents(sure_fg)
+#使用函数 cv2.connectedComponents()它会把将背景标记为 0，其他的对象使用从 1 开始的正整数标记
+markers = markers1+1
+#但是，我们知道如果背景标记为 0，那分水岭算法就会把它当成未知区域了。所以我们想
+# 使用不同的整数标记它们。而对不确定的区域标记为 0（函数cv2.connectedComponents 输出的结果中
+# 使用 unknown 定义未知区域）。
+# Now, mark the region of unknown with zero
+markers[unknown==255] = 0
+markers3 = cv2.watershed(img,markers)
+img[markers3 == -1] = [255,0,0]
+img[markers3 == 0] = [0,0,0]
+img[markers3 == 1] = [0,0,255]
+img[markers3 == 2] = [0,255,0]
+img[markers3 == 3] = [255,255,0]
+img[markers3 == 4] = [255,0,255]
+img[markers3 == 5] = [0,255,255]
+cv2.imshow("result",img )
+cv2.waitKey(0)
+cv2.destroyAllWindows()
